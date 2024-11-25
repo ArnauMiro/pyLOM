@@ -1806,3 +1806,38 @@ def normals(real[:,:] xyz, int[:,:] conec):
 		return _dnormals(xyz,conec)
 	else:
 		return _snormals(xyz,conec)
+
+@cr('math.search_ball')
+def search_ball(real[:] center, real radius, real[:,:] xyz):
+	'''
+	Given a center and a radius, return all the points within.
+	'''
+	cdef int ii, jj, npoints = xyz.shape[0], ndim = xyz.shape[1], idx = 0
+	cdef real dist
+	cdef np.ndarray[np.int32_t,ndim=1] out = np.ndarray((npoints,),dtype=np.int32)
+	for ii in range(npoints):
+		# Compute distance of point to center
+		dist = 0
+		for jj in range(ndim):
+			dist += (center[jj] - xyz[ii,jj])*(center[jj] - xyz[ii,jj])
+		dist = sqrt(dist)
+		# Find if distance is less than the radius
+		if dist <= radius:
+			out[idx] = ii # Store point id
+			idx  += 1
+	return np.resize(out,(idx+1,))
+
+@cr('math.find_neighbors')
+def find_neighbors(real[:] vertices, real[:,:] candidates_vertices):
+	'''
+	Given a set of vertices and a list of candidate vertices, find
+	which are the neighbours of the element.
+	'''
+#	cdef int ii, jj, nelem = candidates_vertices.shape[0], nvert = candidates_vertices.shape[0]
+#	cdef int ivert
+#	cdef np.ndarray[np.int32_t,ndim=1] out = np.ndarray((nelem,),dtype=np.int32)
+#	for ii in range(nelem):
+#		
+#
+	# Each neighbor cell shares exactly 2 vertices with cell i
+	return np.where(np.sum(np.isin(candidates_vertices, vertices), axis=1) == 2)[0]
