@@ -8,13 +8,14 @@
 from __future__ import print_function, division
 
 import os, numpy as np
+import time
 
 from .             import inp_out as io
-from .vmmath       import cellCenters, normals
-from .utils.cr     import cr
+from .vmmath       import cellCenters, normals, search_ball, find_neighbors
+from .utils.cr     import cr, cr_info
 from .utils.mem    import mem
 from .utils.errors import raiseError
-from .utils.parall import mpi_reduce
+from .utils.parall import MPI_RANK, MPI_SIZE, mpi_reduce, mpi_gather, worksplit
 
 
 ALYA2ELTYP = {
@@ -77,6 +78,7 @@ class Mesh(object):
 		self._xyzc   = None
 		self._normal = None
 		self._conec  = connectivity
+		self._conecc = None
 		self._eltype = eltype
 		self._cellO  = cellOrder
 		self._pointO = pointOrder
@@ -113,6 +115,59 @@ class Mesh(object):
 		Return the size accoding to the type of data
 		'''
 		return self.npoints if pointData else self.ncells
+	
+     
+	# def _process_normal(self, i, neighbors):
+	# 	'''
+	# 	Given a node connectivity row, it computes the cells sharing at least two nodes.	
+	# 	Used for the computation of the face normals in parallel.
+
+	# 	Inputs:
+	# 		> i: element index
+	# 		> neighbors: elements adjacent to element i
+
+	# 	Outputs:
+	# 		> facenormal: face normal of the element i
+	# 	'''
+	# 	for c in neighbors:
+	# 		if c == -1:
+	# 			continue
+	# 		center = self.xyzc[c]
+	# 		common_nodes_idx = np.intersect1d(self.connectivity[i], self.connectivity[c])
+	# 		if len(common_nodes_idx) == 2:
+	# 			common_nodes = self.xyz[self.connectivity[common_nodes_idx]]
+
+	# 			# Boundary between i and neighbor
+	# 			el_wall = common_nodes[0] - common_nodes[1] # Wall between elements i and c
+	# 			surface_normal = np.cross(el_wall, common_nodes[0]-center)
+	# 			facenormal = np.cross(el_wall, surface_normal)
+	# 			facenormal /= np.linalg.norm(_process_connection(self, i, c):
+	# 	'''
+	# 	Given a node connectivity row, it computes the cells sharing at least two nodes.
+	# 	Used for the computation of the connectivity of the cell centers in parallel.
+
+
+	# 	Inputs:
+	# 		> i: node connectivity row index
+	# 		> c: node connectivity row
+	# 	'''
+
+
+	# 	c0, c1, c2 = c[0], c[1], c[2]
+	# 	array = np.sum((self.connectivity == c0) | (self.connectivity == c1) | (self.connectivity == c2), axis=1) == 2
+	# 	idx = np.where(array)[0]
+
+	# 	if i % 1000 == 0:
+	# 		print(f'Connectivity of element {i}\n{idx}')
+		
+	# 	return idx.astype(np.int64)facenormal)
+
+	# 			# Check if the normal is pointing outwards
+	# 			if np.dot(facenormal, center-common_nodes[0]) < 0:
+	# 				facenormal = -facenormal
+
+	# 	return facenormal
+
 
 	@cr('Mesh.cellcenters')
 	def cellcenters(self):
@@ -152,6 +207,73 @@ class Mesh(object):
 			xyzc = cellCenters(self._xyz,self._conec)
 		return xyzc
 
+	@cr('Mesh.centers_connectivity')
+	def centers_connectivity(self, normals, radius_factor=5.0):
+		'''
+		Computes the connectivity of the cell centers
+		
+		Inputs:
+			> normals: normals of the mesh
+			> radius_factor: radius factor to search possible neighbors
+
+		Outputs:
+			> conecc: connectivity of the cell centers
+		'''
+
+		radius = np.sqrt(np.linalg.norm(normals, axis=1))*radius_factor
+
+		conecc = np.ones((self.xyzc.shape[0], 3), dtype=np.int64)*-1
+
+		for ielem in range(self.xyzc.shape[0]):
+			conec_elem = self.connectivity[ielem]
+
+			# Reduce search to ball of radius r
+			candidates_list = search_ball(self.xyzc[ielem], radius[ielem], self.xyzc)
+
+			conec_candidates = self.connectivity[candidates_list,:]
+			if conec_candidates.shape[0] < 3:
+				raiseError(f'Search radius too small for element {ielem}. Increase the radius factor.')
+			
+			neighbors_list = find_neighbors(conec_elem, conec_candidates)
+			conecc[ielem] = candidates_list[neighbors_list]
+
+			if ielem % 1000 == 0:
+				cr_info()
+
+		self._conecc = conecc
+
+		return conecc
+
+
+
+	
+
+
+	# @cr('Mesh.facenormals')
+	# def facenormals(self):
+	# 	"""
+	# 	Parallel computation of face normals at the wall boundary of each element
+	# 	"""
+
+	# 	# Define the work range for each process
+	# 	start_idx, end_idx = worksplit(0, self.num_elements, MPI_RANK, nWorkers=MPI_SIZE)
+		
+	# 	# Local list to store normal vectors
+	# 	sub_normals = np.zeros((end_idx - start_idx, 3))
+
+	# 	# Calculate normals for the assigned range of elements
+	# 	for local_idx, global_idx in enumerate(range(start_idx, end_idx)):
+	# 		neighbors = self.centers_connectivity[global_idx]  # Get neighbors for the current element
+	# 		sub_normals[local_idx] = self._process_normal(global_idx, neighbors)
+
+	# 	# Gather all normal vectors at the root process
+	# 	all_normals = mpi_gather(sub_normals, root=0, all=False)
+
+	# 	# Assign the concatenated result in the root process
+	# 	if MPI_RANK == 0:
+	# 		return np.concatenate(all_normals, axis=0)
+		
+		
 	@cr('Mesh.reshape')
 	def reshape_var(self,var,info):
 		'''
@@ -287,10 +409,17 @@ class Mesh(object):
 	def normal(self):
 		if self._normal is None: self._normal = normals(self._xyz,self._conec)
 		return self._normal
-
+	@property
+	def facenormals(self):
+		if self._facenormals is None: self._facenormals = self.facenormals()
+		return self._facenormals
 	@property
 	def connectivity(self):
 		return self._conec
+	# @property
+	# def centers_connectivity(self):
+	# 	if self._conecc is None: self._centers_connectivity
+	# 	return self._conecc
 	@property
 	def cellOrder(self):
 		return self._cellO
@@ -316,73 +445,73 @@ class Mesh(object):
 		return ELTYPE2ENSI[self._eltype[0]]
 
 
-def _struct2d_compute_xyz(nx,ny,x,y,dimsx,dimsy):
-	'''
-	Compute points for a 2D structured mesh
-	'''
-	if x is None:
-		dx = (dimsx[1] - dimsx[0])/(nx - 1.)
-		x  = dx*np.arange(nx) + dimsx[0]
-	if y is None:
-		dy = (dimsy[1] - dimsy[0])/(ny - 1.)
-		y  = dy*np.arange(ny) + dimsy[0]
-	xx, yy = np.meshgrid(x,y,indexing='ij')
-	xy = np.zeros((nx*ny,3),dtype=np.double)
-	xy[:,0] = xx.reshape((nx*ny,),order='C')
-	xy[:,1] = yy.reshape((nx*ny,),order='C')
-	return xy
+	def _struct2d_compute_xyz(nx,ny,x,y,dimsx,dimsy):
+		'''
+		Compute points for a 2D structured mesh
+		'''
+		if x is None:
+			dx = (dimsx[1] - dimsx[0])/(nx - 1.)
+			x  = dx*np.arange(nx) + dimsx[0]
+		if y is None:
+			dy = (dimsy[1] - dimsy[0])/(ny - 1.)
+			y  = dy*np.arange(ny) + dimsy[0]
+		xx, yy = np.meshgrid(x,y,indexing='ij')
+		xy = np.zeros((nx*ny,3),dtype=np.double)
+		xy[:,0] = xx.reshape((nx*ny,),order='C')
+		xy[:,1] = yy.reshape((nx*ny,),order='C')
+		return xy
 
-def _struct2d_compute_conec(nx,ny,xyz):
-	'''
-	Compute connectivity for a 2D structured mesh
-	'''
-	# Obtain the ids
-	idx  = np.lexsort((xyz[:,1],xyz[:,0]))
-	idx2 = idx.reshape((nx,ny))
-	# Create connectivity array
-	conec = np.zeros(((nx-1)*(ny-1),4),dtype=np.int32)
-	conec[:,0] = idx2[:-1,:-1].ravel()
-	conec[:,1] = idx2[:-1,1:].ravel()
-	conec[:,2] = idx2[1:,1:].ravel()
-	conec[:,3] = idx2[1:,:-1].ravel()
-	return conec
+	def _struct2d_compute_conec(nx,ny,xyz):
+		'''
+		Compute connectivity for a 2D structured mesh
+		'''
+		# Obtain the ids
+		idx  = np.lexsort((xyz[:,1],xyz[:,0]))
+		idx2 = idx.reshape((nx,ny))
+		# Create connectivity array
+		conec = np.zeros(((nx-1)*(ny-1),4),dtype=np.int32)
+		conec[:,0] = idx2[:-1,:-1].ravel()
+		conec[:,1] = idx2[:-1,1:].ravel()
+		conec[:,2] = idx2[1:,1:].ravel()
+		conec[:,3] = idx2[1:,:-1].ravel()
+		return conec
 
 
-def _struct3d_compute_xyz(nx,ny,nz,x,y,z,dimsx,dimsy,dimsz):
-	'''
-	Compute points for a 2D structured mesh
-	'''
-	if x is None:
-		dx = (dimsx[1] - dimsx[0])/(nx - 1.)
-		x  = dx*np.arange(nx) + dimsx[0]
-	if y is None:
-		dy = (dimsy[1] - dimsy[0])/(ny - 1.)
-		y  = dy*np.arange(ny) + dimsy[0]
-	if z is None:
-		dz = (dimsz[1] - dimsz[0])/(nz - 1.)
-		z  = dz*np.arange(nz) + dimsz[0]
-	xx, yy, zz = np.meshgrid(x,y,z,indexing='ij')
-	xyz = np.zeros((nx*ny*nz,3),dtype=np.double)
-	xyz[:,0] = xx.reshape((nx*ny*nz,),order='C')
-	xyz[:,1] = yy.reshape((nx*ny*nz,),order='C')
-	xyz[:,2] = zz.reshape((nx*ny*nz,),order='C')
-	return xyz
+	def _struct3d_compute_xyz(nx,ny,nz,x,y,z,dimsx,dimsy,dimsz):
+		'''
+		Compute points for a 2D structured mesh
+		'''
+		if x is None:
+			dx = (dimsx[1] - dimsx[0])/(nx - 1.)
+			x  = dx*np.arange(nx) + dimsx[0]
+		if y is None:
+			dy = (dimsy[1] - dimsy[0])/(ny - 1.)
+			y  = dy*np.arange(ny) + dimsy[0]
+		if z is None:
+			dz = (dimsz[1] - dimsz[0])/(nz - 1.)
+			z  = dz*np.arange(nz) + dimsz[0]
+		xx, yy, zz = np.meshgrid(x,y,z,indexing='ij')
+		xyz = np.zeros((nx*ny*nz,3),dtype=np.double)
+		xyz[:,0] = xx.reshape((nx*ny*nz,),order='C')
+		xyz[:,1] = yy.reshape((nx*ny*nz,),order='C')
+		xyz[:,2] = zz.reshape((nx*ny*nz,),order='C')
+		return xyz
 
-def _struct3d_compute_conec(nx,ny,nz,xyz):
-	'''
-	Compute connectivity for a 2D structured mesh
-	'''
-	# Obtain the ids
-	idx  = np.lexsort((xyz[:,2],xyz[:,1],xyz[:,0]))
-	idx2 = idx.reshape((nx,ny,nz))
-	# Create connectivity array
-	conec = np.zeros(((nx-1)*(ny-1)*(nz-1),8),dtype=np.int32)
-	conec[:,0] = idx2[:-1,:-1,:-1].ravel()
-	conec[:,1] = idx2[:-1,:-1,1:].ravel()
-	conec[:,2] = idx2[:-1,1:,1:].ravel()
-	conec[:,3] = idx2[:-1,1:,:-1].ravel()
-	conec[:,4] = idx2[1:,:-1,:-1].ravel()
-	conec[:,5] = idx2[1:,:-1,1:].ravel()
-	conec[:,6] = idx2[1:,1:,1:].ravel()
-	conec[:,7] = idx2[1:,1:,:-1].ravel()
-	return conec
+	def _struct3d_compute_conec(nx,ny,nz,xyz):
+		'''
+		Compute connectivity for a 2D structured mesh
+		'''
+		# Obtain the ids
+		idx  = np.lexsort((xyz[:,2],xyz[:,1],xyz[:,0]))
+		idx2 = idx.reshape((nx,ny,nz))
+		# Create connectivity array
+		conec = np.zeros(((nx-1)*(ny-1)*(nz-1),8),dtype=np.int32)
+		conec[:,0] = idx2[:-1,:-1,:-1].ravel()
+		conec[:,1] = idx2[:-1,:-1,1:].ravel()
+		conec[:,2] = idx2[:-1,1:,1:].ravel()
+		conec[:,3] = idx2[:-1,1:,:-1].ravel()
+		conec[:,4] = idx2[1:,:-1,:-1].ravel()
+		conec[:,5] = idx2[1:,:-1,1:].ravel()
+		conec[:,6] = idx2[1:,1:,1:].ravel()
+		conec[:,7] = idx2[1:,1:,:-1].ravel()
+		return conec

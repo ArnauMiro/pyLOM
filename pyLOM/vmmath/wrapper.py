@@ -418,3 +418,51 @@ def normals(xyz,conec):
 			v = xyzel[inod-1] - cen
 			normals[ielem,:] += 0.5*np.cross(u,v)
 	return normals
+
+@cr('math.search_ball')
+def search_ball(center, radius, xyz):
+	'''
+	Given a list of points and a point i, return all the points within a radius r from i.
+	
+	Parameters
+	----------
+	xyz : np.array
+	Array of points.
+	i : int
+	Index of the point.
+	r : float
+	Radius.
+	
+	Returns
+	-------
+	points : np.array'''
+
+	# vec  = xyz - np.tile(i_xyz,(xyz.shape[0],1))
+	# dist = np.sqrt(np.sum(vec*vec,axis=1))
+	dist = np.sqrt(np.linalg.norm(xyz - center, axis=1))
+	
+	return np.where(dist <= radius)[0]
+
+@cr('math.find_neighbors')
+def find_neighbors(vertices, candidates_vertices):
+    '''
+    Given a cellcenter index i, a list of candidates i_candidates and a list of connections,
+    return the real neighbors of the cellcenter i.
+
+    Parameters
+    ----------
+    vertices : np.array
+        Array of vertices of cell i.
+    candidates : np.array
+        Array of candidates indexes (prefiltered from the entire mesh using proximity criterion).
+    candidates_vertices : np.array
+        Array of vertices of each candidate cell.
+        
+    Returns
+    -------
+    neighbors : np.array
+        List of neighbors indexes.
+    '''
+
+    # Each neighbor cell shares exactly 2 vertices with cell i
+    return np.where(np.sum(np.isin(candidates_vertices, vertices), axis=1) == 2)[0]

@@ -16,6 +16,8 @@ from .wrapper import qr, svd, tsqr, tsqr_svd, randomized_svd
 from .wrapper import fft
 # Mesh related routines
 from .wrapper import cellCenters, normals
+# Search related routines
+from .wrapper import search_ball, find_neighbors
 
 
 del wrapper
