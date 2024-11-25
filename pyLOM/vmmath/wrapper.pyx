@@ -1829,7 +1829,7 @@ def search_ball(real[:] center, real radius, real[:,:] xyz):
 		if dist <= radius:
 			out[idx] = ii # Store point id
 			idx  += 1
-	return np.resize(out,(idx+1,))
+	return np.resize(out,(idx,))
 
 @cr('math.find_neighbors')
 @cython.boundscheck(False) # turn off bounds-checking for entire function
