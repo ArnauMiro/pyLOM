@@ -116,7 +116,6 @@ class Dataset(object):
 		'''
 		ndim = self._fieldict[var]['ndim']
 		if idim >= ndim: raiseError(f'Requested dimension {idim} for {var} greater than its number of dimensions {ndim}!')
-		print(len(self))
 		return  np.ascontiguousarray(self._fieldict[var]['value'][idim:ndim*len(self):ndim])
 
 	def info(self,var):
