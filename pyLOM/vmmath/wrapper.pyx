@@ -1808,6 +1808,10 @@ def normals(real[:,:] xyz, int[:,:] conec):
 		return _snormals(xyz,conec)
 
 @cr('math.search_ball')
+@cython.boundscheck(False) # turn off bounds-checking for entire function
+@cython.wraparound(False)  # turn off negative index wrapping for entire function
+@cython.nonecheck(False)
+@cython.cdivision(True)    # turn off zero division check
 def search_ball(real[:] center, real radius, real[:,:] xyz):
 	'''
 	Given a center and a radius, return all the points within.
@@ -1828,6 +1832,10 @@ def search_ball(real[:] center, real radius, real[:,:] xyz):
 	return np.resize(out,(idx+1,))
 
 @cr('math.find_neighbors')
+@cython.boundscheck(False) # turn off bounds-checking for entire function
+@cython.wraparound(False)  # turn off negative index wrapping for entire function
+@cython.nonecheck(False)
+@cython.cdivision(True)    # turn off zero division check
 def find_neighbors(real[:] vertices, real[:,:] candidates_vertices):
 	'''
 	Given a set of vertices and a list of candidate vertices, find
