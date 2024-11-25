@@ -1836,7 +1836,7 @@ def search_ball(real[:] center, real radius, real[:,:] xyz):
 @cython.wraparound(False)  # turn off negative index wrapping for entire function
 @cython.nonecheck(False)
 @cython.cdivision(True)    # turn off zero division check
-def find_neighbors(real[:] vertices, real[:,:] candidates_vertices):
+def find_neighbors(vertices,candidates_vertices):
 	'''
 	Given a set of vertices and a list of candidate vertices, find
 	which are the neighbours of the element.
