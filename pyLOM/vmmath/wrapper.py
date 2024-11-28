@@ -428,10 +428,10 @@ def search_ball(center, radius, xyz):
 	return np.where(dist <= radius)[0]
 
 @cr('math.find_neighbors')
-def find_neighbors(vertices, candidates_vertices):
+def find_neighbors(vertices, candidates_vertices, nshared=2):
 	'''
 	Given a set of vertices and a list of candidate vertices, find
 	which are the neighbours of the element.
 	'''
 	# Each neighbor cell shares exactly 2 vertices with cell i
-	return np.where(np.sum(np.isin(candidates_vertices, vertices), axis=1) == 2)[0]
+	return np.where(np.sum(np.isin(candidates_vertices, vertices), axis=1) == nshared)[0]

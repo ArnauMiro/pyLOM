@@ -1836,16 +1836,40 @@ def search_ball(real[:] center, real radius, real[:,:] xyz):
 @cython.wraparound(False)  # turn off negative index wrapping for entire function
 @cython.nonecheck(False)
 @cython.cdivision(True)    # turn off zero division check
-def find_neighbors(vertices,candidates_vertices):
+def find_neighbors(int[:] vertices,int[:,:] candidates_vertices,int nshared=2):
 	'''
 	Given a set of vertices and a list of candidate vertices, find
-	which are the neighbours of the element.
+	which are the neighbours of the element. The neighbour criteria is to at least
+	have nshared vertices.
 	'''
-#	cdef int ii, jj, nelem = candidates_vertices.shape[0], nvert = candidates_vertices.shape[0]
-#	cdef int ivert
-#	cdef np.ndarray[np.int32_t,ndim=1] out = np.ndarray((nelem,),dtype=np.int32)
-#	for ii in range(nelem):
-#		
-#
-	# Each neighbor cell shares exactly 2 vertices with cell i
-	return np.where(np.sum(np.isin(candidates_vertices, vertices), axis=1) == 2)[0]
+	cdef int ii, jj, ic, ifound, ncandidates, nelem = candidates_vertices.shape[0], nvert = candidates_vertices.shape[0]
+	cdef int ivert
+	cdef int *candidates
+	cdef np.ndarray[np.int32_t,ndim=1] out = np.ndarray((nelem,),dtype=np.int32)
+	# First find candidates who share at least one vertex
+	candidates = <int*>malloc(nelem*sizeof(int))
+	ic         = 0
+	for ii in range(nelem):
+		candidates[ii] = -1
+		for jj in range(nvert):
+			if candidates_vertices[ii,jj] == vertices[jj]:
+				candidates[ic] = ii
+				ic += 1
+				break
+	ncandidates = ic
+	# Loop the candidate elements and check if they have at least nshared
+	# vertices
+	ic = 0
+	for ii in range(ncandidates):
+		ifound = 0
+		for jj in range(nvert):
+			# Count how many common vertices
+			if candidates_vertices[candidates[ii],jj] == vertices[jj]: ifound += 1
+			# If the count reached nshared, we have a neighbor
+			if ifound == nshared:
+				out[ic] = candidates[ii]
+				ic += 1
+				break
+	# Free and return
+	free(candidates)
+	return np.resize(out,(ic,))
