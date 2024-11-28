@@ -435,3 +435,36 @@ def find_neighbors(vertices, candidates_vertices, nshared=2):
 	'''
 	# Each neighbor cell shares exactly 2 vertices with cell i
 	return np.where(np.sum(np.isin(candidates_vertices, vertices), axis=1) == nshared)[0]
+
+@cr('math.centersConnec')
+def centersConnectivity(xyzc,connec,length,nfaces=3,nshared=2):
+	
+	self, normals, radius_factor=5.0):
+	'''
+	Computes the connectivity of the cell centers
+	
+	Inputs:
+		> xyzc:   positions of the centers
+		> connec: element connectivity
+		> length: characteristic length
+		> radius_factor: radius factor to search possible neighbors
+
+	Outputs:
+		> conecc: connectivity of the cell centers
+	'''
+	nelem = xyzc.shape[0]
+	out = -np.ones((nelem,nfaces),dtype=np.int32)
+	# Loop on the elements
+	for ielem in range(nelem):
+		# Use a ball search using the radius as the characteristic length
+		# to have an approximation of all the close neighbors of ielem
+		icandidates = search_ball(xyzc[ielem], length[ielem], xyzc)
+		# Find the candidate elements
+		candidates = connec[icandidates,:]
+		if candidates.shape[0] < nfaces:
+			raiseError(f'Search radius too small for element {ielem}!')
+		# Find the neighbours which have nshared faces in common
+		ineighbors = find_neighbors(connec[ielem,:],candidates)
+		out[ielem,:len(ineighbors)] = candidates[ineighbors]
+	# Return
+	return out
