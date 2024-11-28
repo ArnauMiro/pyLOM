@@ -221,8 +221,7 @@ class Mesh(object):
 		'''
 
 		radius = np.sqrt(np.linalg.norm(normals, axis=1))*radius_factor
-
-		conecc = np.ones((self.xyzc.shape[0], 3), dtype=np.int64)*-1
+		conecc = np.ones((self.xyzc.shape[0], 3), dtype=np.int32)*-1
 
 		for ielem in range(self.xyzc.shape[0]):
 			conec_elem = self.connectivity[ielem]
@@ -236,9 +235,6 @@ class Mesh(object):
 			
 			neighbors_list = find_neighbors(conec_elem, conec_candidates)
 			conecc[ielem] = candidates_list[neighbors_list]
-
-			if ielem % 1000 == 0:
-				cr_info()
 
 		self._conecc = conecc
 
