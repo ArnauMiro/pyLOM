@@ -1873,3 +1873,46 @@ def find_neighbors(int[:] vertices,int[:,:] candidates_vertices,int nshared=2):
 	# Free and return
 	free(candidates)
 	return np.resize(out,(ic,))
+
+
+@cr('math.centersConnec')
+@cython.boundscheck(False) # turn off bounds-checking for entire function
+@cython.wraparound(False)  # turn off negative index wrapping for entire function
+@cython.nonecheck(False)
+@cython.cdivision(True)    # turn off zero division check
+def centersConnectivity(real[:,:] xyzc,int[:,:] connec,real[:] length, int nfaces=3, int nshared=2):
+	'''
+	Computes the connectivity of the cell centers
+	
+	Inputs:
+		> xyzc:   positions of the centers
+		> connec: element connectivity
+		> length: characteristic length
+		> radius_factor: radius factor to search possible neighbors
+
+	Outputs:
+		> conecc: connectivity of the cell centers
+	'''
+	cdef int ii, jj, ielem, nelem = xyzc.shape[0], nvert = connec.shape[1], ncadidates, nneigh
+	cdef int[:] icandidates, ineighbors
+	cdef np.ndarray[np.int32_t,ndim=2] candidates = np.ndarray((10,nvert),dtype=np.int32)
+	cdef np.ndarray[np.int32_t,ndim=2] out        = -np.ones((nelem,nfaces),dtype=np.int32)
+	# Loop on the elements
+	for ielem in range(nelem):
+		# Use a ball search using the radius as the characteristic length
+		# to have an approximation of all the close neighbors of ielem
+		icandidates = search_ball(xyzc[ielem], length[ielem], xyzc)
+		ncadidates  = icandidates.shape[0]
+		if ncadidates < nfaces: raiseError(f'Search radius too small for element {ielem}!')
+		candidates  = np.resize(candidates,(ncadidates,))
+		# Find the candidate elements
+		for ii in range(ncadidates):
+			for jj in range(nvert):
+				candidates[ii,jj] = connec[icandidates[ii],jj]
+		# Find the neighbours which have nshared faces in common
+		ineighbors = find_neighbors(connec[ielem,:],candidates)
+		nneigh     = ineighbors.shape[0]
+		for ii in range(nneigh):
+			out[ielem,ii] = icandidates[ineighbors[ii]]
+	# Return
+	return out

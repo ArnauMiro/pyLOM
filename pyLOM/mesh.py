@@ -11,7 +11,7 @@ import os, numpy as np
 import time
 
 from .             import inp_out as io
-from .vmmath       import cellCenters, normals, search_ball, find_neighbors
+from .vmmath       import cellCenters, normals, centersConnectivity
 from .utils.cr     import cr
 from .utils.mem    import mem
 from .utils.errors import raiseError
@@ -219,43 +219,8 @@ class Mesh(object):
 		Outputs:
 			> conecc: connectivity of the cell centers
 		'''
-
 		radius = np.sqrt(np.linalg.norm(normals, axis=1))*radius_factor
-<<<<<<< HEAD
-		conecc = np.ones((self.xyzc.shape[0], 3), dtype=np.int32)*-1
-=======
-
-		conecc = -np.ones((self.xyzc.shape[0], 3), dtype=np.int64)
->>>>>>> 533a04a (Deleted cr from mesh)
-
-		for ielem in range(self.xyzc.shape[0]):
-			conec_elem = self.connectivity[ielem]
-
-			# Reduce search to ball of radius r
-			candidates_list = search_ball(self.xyzc[ielem], radius[ielem], self.xyzc)
-			if candidates_list.shape[0] < 2:
-				print(f'Error in element {ielem}')
-				print("Candidates list: ", candidates_list)
-				raise ValueError(f'Not enough candidates for element {ielem}. Please increase search radius.')
-
-			conec_candidates = self.connectivity[candidates_list,:]
-			
-			neighbors_list = find_neighbors(conec_elem, conec_candidates)
-<<<<<<< HEAD
-			conecc[ielem] = candidates_list[neighbors_list]
-=======
-				
-			conecc[ielem, :len(neighbors_list)] = candidates_list[neighbors_list]
->>>>>>> 533a04a (Deleted cr from mesh)
-
-		self._conecc = conecc
-
-		return conecc
-
-
-
-	
-
+		return centersConnectivity(self.xyzc,self.connectivity,radius,nfaces=3,nshared=2)
 
 	# @cr('Mesh.facenormals')
 	# def facenormals(self):

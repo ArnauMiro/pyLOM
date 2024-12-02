@@ -465,6 +465,6 @@ def centersConnectivity(xyzc,connec,length,nfaces=3,nshared=2):
 			raiseError(f'Search radius too small for element {ielem}!')
 		# Find the neighbours which have nshared faces in common
 		ineighbors = find_neighbors(connec[ielem,:],candidates)
-		out[ielem,:len(ineighbors)] = candidates[ineighbors]
+		out[ielem,:len(ineighbors)] = icandidates[ineighbors]
 	# Return
 	return out
