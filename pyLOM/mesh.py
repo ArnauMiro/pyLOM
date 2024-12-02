@@ -245,8 +245,7 @@ class Mesh(object):
 	# 	# Assign the concatenated result in the root process
 	# 	if MPI_RANK == 0:
 	# 		return np.concatenate(all_normals, axis=0)
-		
-		
+
 	@cr('Mesh.reshape')
 	def reshape_var(self,var,info):
 		'''
