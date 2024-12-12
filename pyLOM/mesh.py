@@ -11,7 +11,7 @@ import os, numpy as np
 import time
 
 from .             import inp_out as io
-from .vmmath       import cellCenters, normals, centersConnectivity
+from .vmmath       import cellCenters, normals, search_ball, find_neighbors, process_facenormal
 from .utils.cr     import cr
 from .utils.mem    import mem
 from .utils.errors import raiseError
@@ -116,58 +116,7 @@ class Mesh(object):
 		'''
 		return self.npoints if pointData else self.ncells
 	
-     
-	# def _process_normal(self, i, neighbors):
-	# 	'''
-	# 	Given a node connectivity row, it computes the cells sharing at least two nodes.	
-	# 	Used for the computation of the face normals in parallel.
-
-	# 	Inputs:
-	# 		> i: element index
-	# 		> neighbors: elements adjacent to element i
-
-	# 	Outputs:
-	# 		> facenormal: face normal of the element i
-	# 	'''
-	# 	for c in neighbors:
-	# 		if c == -1:
-	# 			continue
-	# 		center = self.xyzc[c]
-	# 		common_nodes_idx = np.intersect1d(self.connectivity[i], self.connectivity[c])
-	# 		if len(common_nodes_idx) == 2:
-	# 			common_nodes = self.xyz[self.connectivity[common_nodes_idx]]
-
-	# 			# Boundary between i and neighbor
-	# 			el_wall = common_nodes[0] - common_nodes[1] # Wall between elements i and c
-	# 			surface_normal = np.cross(el_wall, common_nodes[0]-center)
-	# 			facenormal = np.cross(el_wall, surface_normal)
-	# 			facenormal /= np.linalg.norm(_process_connection(self, i, c):
-	# 	'''
-	# 	Given a node connectivity row, it computes the cells sharing at least two nodes.
-	# 	Used for the computation of the connectivity of the cell centers in parallel.
-
-
-	# 	Inputs:
-	# 		> i: node connectivity row index
-	# 		> c: node connectivity row
-	# 	'''
-
-
-	# 	c0, c1, c2 = c[0], c[1], c[2]
-	# 	array = np.sum((self.connectivity == c0) | (self.connectivity == c1) | (self.connectivity == c2), axis=1) == 2
-	# 	idx = np.where(array)[0]
-
-	# 	if i % 1000 == 0:
-	# 		print(f'Connectivity of element {i}\n{idx}')
-		
-	# 	return idx.astype(np.int64)facenormal)
-
-	# 			# Check if the normal is pointing outwards
-	# 			if np.dot(facenormal, center-common_nodes[0]) < 0:
-	# 				facenormal = -facenormal
-
-	# 	return facenormal
-
+	
 
 	@cr('Mesh.cellcenters')
 	def cellcenters(self):
@@ -206,6 +155,7 @@ class Mesh(object):
 		if self.type == 'UNSTRUCT':
 			xyzc = cellCenters(self._xyz,self._conec)
 		return xyzc
+	
 
 	@cr('Mesh.centers_connectivity')
 	def centers_connectivity(self, normals, radius_factor=5.0):
@@ -219,33 +169,67 @@ class Mesh(object):
 		Outputs:
 			> conecc: connectivity of the cell centers
 		'''
+
 		radius = np.sqrt(np.linalg.norm(normals, axis=1))*radius_factor
-		return centersConnectivity(self.xyzc,self.connectivity,radius,nfaces=3,nshared=2)
 
-	# @cr('Mesh.facenormals')
-	# def facenormals(self):
-	# 	"""
-	# 	Parallel computation of face normals at the wall boundary of each element
-	# 	"""
+		conecc = -np.ones((self.xyzc.shape[0], 3), dtype=np.int64)
 
-	# 	# Define the work range for each process
-	# 	start_idx, end_idx = worksplit(0, self.num_elements, MPI_RANK, nWorkers=MPI_SIZE)
+		for ielem in range(self.xyzc.shape[0]):
+			conec_elem = self.connectivity[ielem]
+
+			# Reduce search to ball of radius r
+			candidates_list = search_ball(self.xyzc[ielem], radius[ielem], self.xyzc)
+			if candidates_list.shape[0] < 2:
+				print(f'Error in element {ielem}')
+				print("Candidates list: ", candidates_list)
+				raise ValueError(f'Not enough candidates for element {ielem}. Please increase search radius.')
+
+			conec_candidates = self.connectivity[candidates_list,:]
+			
+			neighbors_list = find_neighbors(conec_elem, conec_candidates)
+				
+			conecc[ielem, :len(neighbors_list)] = candidates_list[neighbors_list]
+
+		self._conecc = conecc
+
+		return conecc
+
+
+	@cr('Mesh.facenormals')
+	def facenormals(self):
+		"""
+		Compute in-plane the normals to element boundaries
+		"""
+
+		facenormals = np.zeros((self.ncells*3, 3), dtype=np.double)
+		for elem in range(self.ncells):
+			neighbors = self.connectivity[elem]
+			for i, c in enumerate(neighbors):
+				if c == -1:
+					# ignore dummy value corresponding to inexistent neighbor
+					facenormals[elem//3 * 3 + i] = np.zeros((1,3))
+					continue
+				common_nodes_idx = np.intersect1d(self.connectivity[elem], self.connectivity[c])
+				if len(common_nodes_idx) == 2:
+					a = self.xyz[common_nodes_idx[0]]
+					b = self.xyz[common_nodes_idx[1]]
+					c = self.xyzc[elem]
+
+					# Boundary between i and neighbor
+					surface_normal = np.cross(a - b, a - c) # Normal to the surface element
+					facenormal = np.cross(surface_normal, a - b) # Normal to the face between surface elements
+					facenormal /= np.linalg.norm(facenormal)
+
+				# Check if the normal is pointing outwards
+				if np.dot(facenormal, a - c) < 0:
+					facenormal = -facenormal
+
+				facenormals[elem//3 * 3 + i] = facenormal
+
+		return facenormals
+
 		
-	# 	# Local list to store normal vectors
-	# 	sub_normals = np.zeros((end_idx - start_idx, 3))
-
-	# 	# Calculate normals for the assigned range of elements
-	# 	for local_idx, global_idx in enumerate(range(start_idx, end_idx)):
-	# 		neighbors = self.centers_connectivity[global_idx]  # Get neighbors for the current element
-	# 		sub_normals[local_idx] = self._process_normal(global_idx, neighbors)
-
-	# 	# Gather all normal vectors at the root process
-	# 	all_normals = mpi_gather(sub_normals, root=0, all=False)
-
-	# 	# Assign the concatenated result in the root process
-	# 	if MPI_RANK == 0:
-	# 		return np.concatenate(all_normals, axis=0)
-
+		
 	@cr('Mesh.reshape')
 	def reshape_var(self,var,info):
 		'''
